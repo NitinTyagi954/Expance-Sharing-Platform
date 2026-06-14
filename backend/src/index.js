@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import authRoutes from './routes/auth.js';
 import groupRoutes from './routes/groups.js';
 import expenseRoutes from './routes/expenses.js';
+import settlementRoutes from './routes/settlements.js';
 
 // Load environment variables
 dotenv.config();
@@ -27,6 +28,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/settlements', settlementRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

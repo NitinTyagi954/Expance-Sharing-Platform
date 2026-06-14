@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DIRECT_URL,
 });
 
 const adapter = new PrismaPg(pool);
