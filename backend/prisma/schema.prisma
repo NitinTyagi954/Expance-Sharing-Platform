@@ -1,12 +1,169 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  isGuest       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  paidExpenses     Expense[]         @relation("PaidBy")
+  splits           ExpenseSplit[]
+  memberships      GroupMembership[]
+  sentSettlements  Settlement[]      @relation("SentBy")
+  recvSettlements  Settlement[]      @relation("ReceivedBy")
+}
+
+model Group {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  memberships GroupMembership[]
+  expenses    Expense[]
+  settlements Settlement[]
+  importSessions ImportSession[]
+}
+
+model GroupMembership {
+  id       String    @id @default(uuid())
+  groupId  String
+  userId   String
+  joinedAt DateTime
+  leftAt   DateTime?
+
+  group Group @relation(fields: [groupId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([groupId, userId, joinedAt])
+}
+
+model Expense {
+  id              String    @id @default(uuid())
+  groupId         String
+  description     String
+  amount          Float
+  currency        String    @default("INR")
+  amountInINR     Float
+  exchangeRate    Float     @default(1.0)
+  date            DateTime
+  paidById        String
+  splitType       SplitType
+  notes           String?
+  isRefund        Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  importSessionId String?
+
+  group   Group        @relation(fields: [groupId], references: [id])
+  paidBy  User         @relation("PaidBy", fields: [paidById], references: [id])
+  splits  ExpenseSplit[]
+  importSession ImportSession? @relation(fields: [importSessionId], references: [id])
+}
+
+model ExpenseSplit {
+  id         String @id @default(uuid())
+  expenseId  String
+  userId     String
+  amount     Float
+  percentage Float?
+  shares     Int?
+
+  expense Expense @relation(fields: [expenseId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+}
+
+model Settlement {
+  id          String   @id @default(uuid())
+  groupId     String
+  paidById    String
+  receivedById String
+  amount      Float
+  currency    String   @default("INR")
+  date        DateTime
+  notes       String?
+  createdAt   DateTime @default(now())
+  importSessionId String?
+
+  group      Group @relation(fields: [groupId], references: [id])
+  paidBy     User  @relation("SentBy", fields: [paidById], references: [id])
+  receivedBy User  @relation("ReceivedBy", fields: [receivedById], references: [id])
+  importSession ImportSession? @relation(fields: [importSessionId], references: [id])
+}
+
+model ImportSession {
+  id          String   @id @default(uuid())
+  groupId     String
+  fileName    String
+  status      ImportStatus @default(PENDING)
+  totalRows   Int      @default(0)
+  imported    Int      @default(0)
+  skipped     Int      @default(0)
+  flagged     Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  group      Group           @relation(fields: [groupId], references: [id])
+  anomalies  ImportAnomaly[]
+  expenses   Expense[]
+  settlements Settlement[]
+}
+
+model ImportAnomaly {
+  id              String        @id @default(uuid())
+  importSessionId String
+  rowNumber       Int
+  anomalyType     AnomalyType
+  description     String
+  rawData         String
+  suggestedAction String
+  status          AnomalyStatus @default(PENDING)
+  resolvedAction  String?
+  createdAt       DateTime      @default(now())
+
+  importSession ImportSession @relation(fields: [importSessionId], references: [id])
+}
+
+enum SplitType {
+  EQUAL
+  UNEQUAL
+  PERCENTAGE
+  SHARE
+}
+
+enum ImportStatus {
+  PENDING
+  IN_REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum AnomalyStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  MODIFIED
+}
+
+enum AnomalyType {
+  DUPLICATE
+  SETTLEMENT
+  NEGATIVE_AMOUNT
+  ZERO_AMOUNT
+  MISSING_CURRENCY
+  MISSING_PAYER
+  INVALID_DATE
+  AMBIGUOUS_DATE
+  NAME_MISMATCH
+  MEMBERSHIP_VIOLATION
+  SPLIT_CONFLICT
+  PERCENTAGE_MISMATCH
+  EXTERNAL_MEMBER
+  AMOUNT_FORMAT
 }
