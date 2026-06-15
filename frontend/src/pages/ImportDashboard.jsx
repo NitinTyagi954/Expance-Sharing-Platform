@@ -144,6 +144,73 @@ export default function ImportDashboard() {
     }
   };
 
+  // 1.5. Approve all auto-approvable anomalies
+  const handleApproveAll = async () => {
+    const pendingAnomalies = anomalies.filter(anom => anomalyStatuses[anom.id] === 'PENDING');
+    const autoApprovable = pendingAnomalies.filter(anom => {
+      const actionDetails = JSON.parse(anom.suggestedAction || '{}');
+      return !['REQUIRE_PAYER', 'REQUIRE_DATE', 'SELECT_DATE_FORMAT', 'RESOLVE_CONFLICT'].includes(actionDetails.action);
+    });
+
+    if (autoApprovable.length === 0) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      const newResolvedRows = { ...resolvedRows };
+      const newStatuses = { ...anomalyStatuses };
+
+      for (const anom of autoApprovable) {
+        const actionDetails = JSON.parse(anom.suggestedAction);
+        const rowNum = anom.rowNumber;
+        const updatedRow = { ...newResolvedRows[rowNum] };
+
+        if (actionDetails.action === 'DISCARD' || actionDetails.action === 'SKIP_ROW') {
+          updatedRow.isSkipped = true;
+        } else if (actionDetails.action === 'CONVERT_TO_SETTLEMENT') {
+          updatedRow.isSettlement = true;
+          updatedRow.isRefund = false;
+        } else if (actionDetails.action === 'MARK_AS_REFUND') {
+          updatedRow.isRefund = true;
+          updatedRow.amount = Math.abs(updatedRow.amount);
+        } else if (actionDetails.action === 'DEFAULT_TO_INR') {
+          updatedRow.currency = 'INR';
+        } else if (actionDetails.action === 'NORMALIZE_NAME') {
+          updatedRow.paidBy = actionDetails.suggestedName;
+        } else if (actionDetails.action === 'REMOVE_INACTIVE_PARTICIPANT') {
+          if (updatedRow.splitWith) {
+            updatedRow.splitWith = updatedRow.splitWith.filter(name => name !== actionDetails.participantName);
+          }
+        } else if (actionDetails.action === 'USE_SPLIT_DETAILS') {
+          updatedRow.splitType = 'SHARE';
+        } else if (actionDetails.action === 'NORMALIZE_PERCENTAGES') {
+          updatedRow.splitDetails = actionDetails.normalizedDetails;
+        } else if (actionDetails.action === 'CREATE_GUEST') {
+          // system auto creates guest user upon commit
+        } else if (actionDetails.action === 'AUTOCORRECT_AMOUNT') {
+          updatedRow.amount = actionDetails.parsedAmount;
+        }
+
+        newResolvedRows[rowNum] = updatedRow;
+        newStatuses[anom.id] = 'APPROVED';
+      }
+
+      // Send requests to backend in parallel
+      await Promise.all(
+        autoApprovable.map(anom => 
+          api.resolveAnomaly(anom.id, 'APPROVED', JSON.parse(anom.suggestedAction))
+        )
+      );
+
+      setResolvedRows(newResolvedRows);
+      setAnomalyStatuses(newStatuses);
+    } catch (err) {
+      setError(`Failed to approve all anomalies: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 2. Reject anomaly/discard row (Step 18)
   const handleReject = async (anom) => {
     try {
@@ -260,6 +327,14 @@ export default function ImportDashboard() {
     return !hasPending;
   }).length;
 
+  const pendingAutoApprovable = anomalies
+    .filter(anom => anomalyStatuses[anom.id] === 'PENDING')
+    .filter(anom => {
+      const actionDetails = JSON.parse(anom.suggestedAction || '{}');
+      return !['REQUIRE_PAYER', 'REQUIRE_DATE', 'SELECT_DATE_FORMAT', 'RESOLVE_CONFLICT'].includes(actionDetails.action);
+    });
+  const autoApprovableCount = pendingAutoApprovable.length;
+
   return (
     <div className="app-container animate-fade-in">
       {/* Breadcrumb nav */}
@@ -372,9 +447,21 @@ export default function ImportDashboard() {
 
           {/* Anomaly Review Table */}
           <div className="glass-card">
-            <h3 style={{ fontSize: '1.25rem', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <AlertTriangle size={20} style={{ color: 'var(--accent-yellow)' }} /> Audit Anomalies Log (Meera's rule)
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                <AlertTriangle size={20} style={{ color: 'var(--accent-yellow)' }} /> Audit Anomalies Log (Meera's rule)
+              </h3>
+              {autoApprovableCount > 0 && (
+                <button 
+                  onClick={handleApproveAll} 
+                  className="btn btn-primary" 
+                  disabled={loading}
+                  style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+                >
+                  Approve All ({autoApprovableCount})
+                </button>
+              )}
+            </div>
 
             <div className="table-container">
               <table className="app-table">
