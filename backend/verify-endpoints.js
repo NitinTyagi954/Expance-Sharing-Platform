@@ -64,6 +64,14 @@ async function runVerification() {
 
     // 4. Test Adding a Member with Date (Priya, joined March 1st)
     console.log('\n4. Testing Adding a Member (Priya, joined 2026-03-01)...');
+    const priyaEmail = `priya-${timestamp}@example.com`;
+    // Register Priya first
+    await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Priya', email: priyaEmail, password: 'Password123' }),
+    });
+
     const memberRes = await fetch(`${API_URL}/groups/${groupId}/members`, {
       method: 'POST',
       headers: {
@@ -72,7 +80,7 @@ async function runVerification() {
       },
       body: JSON.stringify({
         name: 'Priya',
-        email: `priya-${timestamp}@example.com`,
+        email: priyaEmail,
         joinedAt: '2026-03-01T00:00:00.000Z'
       }),
     });
@@ -85,6 +93,14 @@ async function runVerification() {
 
     // 5. Test Adding another Member with Date (Sam, joined 2026-04-15)
     console.log('\n5. Testing Adding another Member (Sam, joined 2026-04-15)...');
+    const samEmail = `sam-${timestamp}@example.com`;
+    // Register Sam first
+    await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Sam', email: samEmail, password: 'Password123' }),
+    });
+
     const samRes = await fetch(`${API_URL}/groups/${groupId}/members`, {
       method: 'POST',
       headers: {
@@ -93,7 +109,7 @@ async function runVerification() {
       },
       body: JSON.stringify({
         name: 'Sam',
-        email: `sam-${timestamp}@example.com`,
+        email: samEmail,
         joinedAt: '2026-04-15T00:00:00.000Z'
       }),
     });

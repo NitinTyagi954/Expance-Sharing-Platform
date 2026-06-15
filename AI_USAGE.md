@@ -221,6 +221,27 @@ Do not enforce custom network/DNS configurations at the application level as it 
 
 ---
 
+### Case 6 — Member Invitation Flow & Guest Profile Separation
+
+**What Claude produced:**
+Automatically creating guest user profiles when adding a member by email, which locked those emails from registering for real accounts later due to unique email database constraints.
+
+**Why it was wrong:**
+Inviting a user by email created a database user record with `isGuest: true` and a blank password. Because email is a unique field, the new member could never register their own account with that email, nor could they log in since guest users cannot have passwords.
+
+**How I caught it:**
+Analyzing the schema unique constraints and the `/auth/register` route code showed that a 400 error was returned if the email already existed in the DB, regardless of whether it belonged to a guest or a registered user.
+
+**What I changed:**
+1. Modified the `/api/groups/:id/members` route ([`backend/src/routes/groups.js`](file:///c:/Users/hp/Desktop/Spreetree/backend/src/routes/groups.js)) to verify if the invited email exists. If it exists, the user is added; if not, it returns a 404 error prompting the inviter to share the website link for the user to register first.
+2. Updated the frontend modal ([`frontend/src/pages/GroupDashboard.jsx`](file:///c:/Users/hp/Desktop/Spreetree/frontend/src/pages/GroupDashboard.jsx)) to render this warning directly inside the modal.
+3. Updated automated test scripts ([`verify-endpoints.js`](file:///c:/Users/hp/Desktop/Spreetree/backend/verify-endpoints.js) and [`verify-importer.js`](file:///c:/Users/hp/Desktop/Spreetree/backend/verify-importer.js)) to register users sequentially before inviting them.
+
+**Lesson:**
+Consider registration constraints and database collisions early when designing invitation loops. Require users to have registered accounts before they can be added to workspaces or groups via email, or use an upgrade/claiming system, rather than creating passive guest accounts using standard email fields.
+
+---
+
 ## General Observations
 
 - Claude is reliable for boilerplate, schema structure, and explaining concepts

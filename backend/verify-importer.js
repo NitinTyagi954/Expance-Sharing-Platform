@@ -57,11 +57,34 @@ async function runImporterVerification() {
     // 3. Add other members with appropriate join dates
     console.log('\n3. Seeding other members (Aisha, Priya, Meera, Dev, Sam)...');
     
+    // Register members first
+    const aishaEmail = `aisha-${timestamp}@spreetree.local`;
+    const priyaEmail = `priya-${timestamp}@spreetree.local`;
+    const meeraEmail = `meera-${timestamp}@spreetree.local`;
+    const devEmail = `dev-${timestamp}@spreetree.local`;
+    const samEmail = `sam-${timestamp}@spreetree.local`;
+
+    const usersToRegister = [
+      { name: 'Aisha', email: aishaEmail },
+      { name: 'Priya', email: priyaEmail },
+      { name: 'Meera', email: meeraEmail },
+      { name: 'Dev', email: devEmail },
+      { name: 'Sam', email: samEmail }
+    ];
+
+    for (const u of usersToRegister) {
+      await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: u.name, email: u.email, password: 'Password123' })
+      });
+    }
+
     // Add Aisha (joined Feb 1st)
     const addAisha = await fetch(`${API_URL}/groups/${groupId}/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ name: 'Aisha', email: `aisha-${timestamp}@spreetree.local`, joinedAt: '2026-02-01T00:00:00.000Z' })
+      body: JSON.stringify({ name: 'Aisha', email: aishaEmail, joinedAt: '2026-02-01T00:00:00.000Z' })
     });
     const aishaMember = await addAisha.json();
     const aishaId = aishaMember.userId;
@@ -70,7 +93,7 @@ async function runImporterVerification() {
     const addPriya = await fetch(`${API_URL}/groups/${groupId}/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ name: 'Priya', email: `priya-${timestamp}@spreetree.local`, joinedAt: '2026-02-01T00:00:00.000Z' })
+      body: JSON.stringify({ name: 'Priya', email: priyaEmail, joinedAt: '2026-02-01T00:00:00.000Z' })
     });
     const priyaMember = await addPriya.json();
     const priyaId = priyaMember.userId;
@@ -79,7 +102,7 @@ async function runImporterVerification() {
     const addMeera = await fetch(`${API_URL}/groups/${groupId}/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ name: 'Meera', email: `meera-${timestamp}@spreetree.local`, joinedAt: '2026-02-01T00:00:00.000Z' })
+      body: JSON.stringify({ name: 'Meera', email: meeraEmail, joinedAt: '2026-02-01T00:00:00.000Z' })
     });
     const meeraMember = await addMeera.json();
     const meeraId = meeraMember.userId;
@@ -88,7 +111,7 @@ async function runImporterVerification() {
     const addDev = await fetch(`${API_URL}/groups/${groupId}/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ name: 'Dev', email: `dev-${timestamp}@spreetree.local`, joinedAt: '2026-02-01T00:00:00.000Z' })
+      body: JSON.stringify({ name: 'Dev', email: devEmail, joinedAt: '2026-02-01T00:00:00.000Z' })
     });
     const devMember = await addDev.json();
     const devId = devMember.userId;
@@ -97,7 +120,7 @@ async function runImporterVerification() {
     const addSam = await fetch(`${API_URL}/groups/${groupId}/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ name: 'Sam', email: `sam-${timestamp}@spreetree.local`, joinedAt: '2026-04-08T00:00:00.000Z' })
+      body: JSON.stringify({ name: 'Sam', email: samEmail, joinedAt: '2026-04-08T00:00:00.000Z' })
     });
     const samMember = await addSam.json();
     const samId = samMember.userId;

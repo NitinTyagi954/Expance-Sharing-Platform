@@ -150,15 +150,20 @@ router.post('/:id/members', async (req, res) => {
       targetUser = await prisma.user.findUnique({
         where: { email: email.toLowerCase().trim() },
       });
+      
+      if (!targetUser) {
+        return res.status(404).json({
+          error: 'User not found. Please share the website link (http://localhost:5173/) with them so they can register. Once registered, you can add them by their email, or share the group dashboard link/code with them.'
+        });
+      }
     }
 
-    // If user not found, create a guest user
+    // If user not found (which means email was not provided, but name was), create a guest user
     if (!targetUser) {
-      const guestName = name || email.split('@')[0];
       targetUser = await prisma.user.create({
         data: {
-          name: guestName.trim(),
-          email: email ? email.toLowerCase().trim() : `guest-${Date.now()}-${Math.random().toString(36).substring(2, 7)}@spreetree.local`,
+          name: name.trim(),
+          email: `guest-${Date.now()}-${Math.random().toString(36).substring(2, 7)}@spreetree.local`,
           passwordHash: '', // Guests don't have passwords
           isGuest: true,
         },

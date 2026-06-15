@@ -217,11 +217,12 @@ export default function GroupDashboard() {
                 <Users size={18} style={{ color: 'var(--primary)' }} /> Members History
               </h3>
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button onClick={() => setShowMemberModal(true)} className="btn btn-secondary" style={{ padding: '6px 8px' }} title="Add Member">
+                <button onClick={() => { setError(''); setShowMemberModal(true); }} className="btn btn-secondary" style={{ padding: '6px 8px' }} title="Add Member">
                   <UserPlus size={14} />
                 </button>
                 <button onClick={() => {
                   if (balances && balances.members.length > 0) {
+                    setError('');
                     setRemoveUserId(balances.members[0].userId);
                     setShowRemoveModal(true);
                   }
@@ -418,8 +419,23 @@ export default function GroupDashboard() {
           <div className="glass-card" style={{ width: '100%', maxWidth: '450px', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '8px' }}><UserPlus size={22} style={{ color: 'var(--primary)' }} /> Add Member</h2>
-              <button onClick={() => setShowMemberModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
+              <button onClick={() => { setError(''); setShowMemberModal(false); }} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
             </div>
+
+            {error && (
+              <div style={{ 
+                backgroundColor: 'rgba(239, 68, 68, 0.1)', 
+                border: '1px solid rgba(239, 68, 68, 0.2)', 
+                color: 'var(--accent-red)',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                fontSize: '0.85rem',
+                lineHeight: '1.4'
+              }}>
+                {error}
+              </div>
+            )}
 
             <form onSubmit={handleAddMember}>
               <div className="form-group">
@@ -438,7 +454,7 @@ export default function GroupDashboard() {
               </div>
 
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px' }}>
-                <button type="button" onClick={() => setShowMemberModal(false)} className="btn btn-secondary">Cancel</button>
+                <button type="button" onClick={() => { setError(''); setShowMemberModal(false); }} className="btn btn-secondary">Cancel</button>
                 <button type="submit" className="btn btn-primary">Add Member</button>
               </div>
             </form>

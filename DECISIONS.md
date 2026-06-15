@@ -340,3 +340,17 @@ in db.js, no impact on production behavior.
 
 **Why:** Parallel queries over a single transaction connection overload the transaction proxy, leading to hangs. Sequential processing is the stable, recommended path. By pre-resolving unique names first, we minimize lookup overhead, and the 90-second timeout ensures resilience against cloud database network roundtrip latencies.
 
+
+## Decision 22 — Email Invitation Rule for Group Members
+
+**Context:** Automatically creating Guest profiles when inviting users by email led to situations where users could not register their accounts afterwards due to unique email constraints.
+
+**Options considered:**
+- Keep automatically creating Guest users and allow Guest users to register/upgrade their accounts (requires complex password upgrades and data merging logic).
+- Restrict email invites to registered users only. If the email doesn't exist, block addition and instruct the inviter to share the website link for the user to register first.
+
+**Chose:** Restrict email invites to registered users only.
+
+**Why:** Ensures clear account ownership and registration simplicity. Creating local guests by name only is still supported for local ledger splits, but introducing email-based members requires them to register their account first, resolving email collision bugs cleanly.
+
+
