@@ -1,356 +1,226 @@
-# DECISIONS.md — Decision Log
+# DECISIONS.md — Architecture & Implementation Decisions
 
-Every significant decision made during this project, the options considered, and why one was chosen. Written as decisions were made, not reconstructed at the end.
-
----
-
-## Decision 1 — Database: Relational vs NoSQL
-
-**Context:** Needed to pick a database before any schema work.
-
-**Options considered:**
-- MongoDB (document store, flexible schema)
-- PostgreSQL (relational, strict schema)
-
-**Chose:** PostgreSQL (via Neon)
-
-**Why:** The assignment explicitly requires relational DBs. Beyond compliance, the data model has real relational structure — expenses reference users, splits reference expenses, memberships have foreign keys to both groups and users. Joins are the natural operation here. A document store would require manually maintaining referential integrity that PostgreSQL enforces for free.
-
-**Trade-off accepted:** More upfront schema design required. Worth it for data integrity.
+This log documents the key design decisions, technical trade-offs, and architecture choices I made while building Spreetree. I updated this log as I worked, rather than trying to recreate it at the end of the project.
 
 ---
 
-## Decision 2 — ORM: Prisma vs Sequelize vs raw SQL
+## Decision 1: Choosing a Relational Database (PostgreSQL via Neon)
 
-**Context:** Needed an ORM to work with PostgreSQL from Node.js.
-
-**Options considered:**
-- Raw SQL (pg library directly)
-- Sequelize (mature, widely used)
-- Prisma (schema-first, newer)
-
-**Chose:** Prisma 7
-
-**Why:** Schema-first approach means the schema file is the source of truth — readable, version-controlled, and easy to explain in an interview. Migrations are auto-generated from schema diffs. The Prisma adapter pattern works cleanly with Neon's serverless PostgreSQL. Sequelize requires more boilerplate model definitions.
-
-**Trade-off accepted:** Prisma 7 required a `prisma.config.ts` and separate `DIRECT_URL` for Neon — slightly more setup than Sequelize. Worth it for the cleaner developer experience.
+* **Context:** Need to store users, groups, memberships, expenses, split configurations, settlements, and import reviews.
+* **Options Considered:** MongoDB (NoSQL) vs. PostgreSQL (Relational).
+* **The Choice:** PostgreSQL.
+* **Why:** The application domain is highly relational. A single expense split links a user to an expense, which is tied to a group. Foreign keys, referential integrity, and cascading deletes are essential here. If I went with MongoDB, I would have had to write custom validation logic to make sure a deleted user's split records didn't remain orphaned. Postgres handles that out of the box. Using Neon also gives us a cloud-hosted serverless instance with zero cold-start latency issues.
+* **Trade-off:** Schema changes require migrations rather than just modifying the objects on the fly, but the strictness is a massive win for financial data.
 
 ---
 
-## Decision 3 — Membership tracking: date-based vs flag-based
+## Decision 2: Prisma 7 ORM
 
-**Context:** Sam moved in mid-April. Meera moved out end of March. The app needs to know who was active on any given expense date.
-
-**Options considered:**
-- Boolean `isActive` flag on membership (simple, but loses history)
-- Separate join/leave event log table
-- `joinedAt` + `leftAt` fields on GroupMembership (date range per member)
-
-**Chose:** `joinedAt` + `leftAt` on GroupMembership
-
-**Why:** A boolean flag cannot answer "was this person a member on March 15?" — it only knows current state. An event log is more flexible but more complex to query. The date-range approach answers the membership question with a single WHERE clause: `joinedAt <= expense.date AND (leftAt IS NULL OR leftAt >= expense.date)`. This is exactly what Sam's requirement needs.
-
-**Trade-off accepted:** A member who left and rejoined needs two separate GroupMembership records. Acceptable for this use case.
+* **Context:** Choosing a database client library for Node.js.
+* **Options Considered:** Raw SQL (`pg` driver), Sequelize, or Prisma.
+* **The Choice:** Prisma 7.
+* **Why:** Prisma's schema-first design acts as the single source of truth for the database layout. The auto-generated TypeScript/JS client makes writing queries incredibly fast and type-safe. It also handles migrations cleanly through `npx prisma migrate dev`.
+* **Trade-off:** Prisma 7 requires using a client adapter (`@prisma/adapter-pg`) when interacting with connection pools. This requires a bit of configuration, but the query safety is worth it.
 
 ---
 
-## Decision 4 — Negative amounts: error vs refund
+## Decision 3: Tracking Membership Transitions with Joined/Left Dates
 
-**Context:** Row 26 has amount = -30 USD. Two interpretations exist.
-
-**Options considered:**
-- Treat as a data error, block import
-- Treat as a refund/credit
-
-**Chose:** Treat as refund, set `isRefund = true`
-
-**Why:** The notes field says "one slot got cancelled" — context unambiguously confirms this is an intentional refund, not a mistake. A blanket error policy would silently lose valid financial data. The `isRefund` flag on the Expense model allows the balance calculation to handle these correctly (subtract from what the payer is owed rather than add to what they paid).
-
-**Rule documented:** Any negative amount with a note explaining the reason → refund. Any negative amount with no context → flag for user confirmation.
+* **Context:** Meera moved out on March 31st. Sam joined on April 8th. The system must know who was active in the flat on the exact day an expense occurred.
+* **Options Considered:** 
+  1. A simple `isActive` boolean flag on the membership row.
+  2. A separate membership history log table.
+  3. Storing nullable `joinedAt` and `leftAt` timestamps directly on the `GroupMembership` relation.
+* **The Choice:** nullable `joinedAt` and `leftAt` on `GroupMembership`.
+* **Why:** A simple boolean flag can only tell us current state, so it fails if we try to calculate historical balances. An audit log is overkill for this scale. Using joined/left date ranges lets us check membership status for any expense date using a single SQL range query: `joinedAt <= date AND (leftAt IS NULL OR leftAt >= date)`.
+* **Trade-off:** If a member leaves the flat and rejoins later, they will have two separate membership records. The balance query handles this cleanly by summing splits across both records.
 
 ---
 
-## Decision 5 — Missing payer: guess vs block
+## Decision 4: Handling Negative Amounts as Refunds
 
-**Context:** Row 13 has no paid_by. Note says "can't remember who paid."
-
-**Options considered:**
-- Default to group creator
-- Split the cost as "unknown" and ignore the payer field
-- Block this row until user assigns a payer
-
-**Chose:** Block the row, require user to assign payer before import
-
-**Why:** The payer field directly determines who gets reimbursed. Guessing wrong corrupts every member's balance. There is no safe default. The cost of blocking one row (user must make one decision) is much lower than the cost of a silently wrong balance that nobody notices until much later.
+* **Context:** Row 26 in the CSV has an amount of `-30 USD` for a "Parasailing refund".
+* **Options Considered:** Reject negative amounts as data entry errors, or support a refund mechanism.
+* **The Choice:** Introduce an `isRefund` flag on the Expense model.
+* **Why:** The note explicitly says "one slot got cancelled". Discarding it would lose actual cash flow data. By setting `isRefund = true` and storing the amount as a positive absolute value, we can easily reverse the balance calculation: instead of adding to what the payer is owed, the refund subtracts from it, and subtracts from what the split participants owe.
+* **Trade-off:** The balance engine and split math require explicit branches to handle `isRefund` conditions, which slightly increases complexity.
 
 ---
 
-## Decision 6 — Duplicate resolution: auto vs user approval
+## Decision 5: Blocking Missing Payers
 
-**Context:** Two types of duplicates exist in the CSV — exact duplicates (same amount) and conflicting duplicates (same description, different amounts).
-
-**Options considered:**
-- Auto-delete exact duplicates, flag conflicting ones
-- Flag all duplicates for user approval
-
-**Chose:** Flag all duplicates for user approval (Meera's explicit requirement)
-
-**Why:** Meera's requirement was "I want to approve anything the app deletes or changes." Auto-deleting even exact duplicates violates this. The cost is one extra click per duplicate. The benefit is the user never discovers a silent deletion after the fact.
+* **Context:** Row 13 in the CSV has a blank `paid_by` field with the note "can't remember who paid".
+* **Options Considered:** Guess the payer (e.g., default to the group creator), or block the row.
+* **The Choice:** Block the row and force manual resolution.
+* **Why:** Assigning a payment to the wrong person completely corrupts the balance ledger. The cost of a silent guess is too high. The importer stages this row and prevents final import until the user manually selects a payer.
+* **Trade-off:** This stops the import flow until a human intervenes, but it is the only way to ensure financial accuracy.
 
 ---
 
-## Decision 7 — Currency conversion: fixed rate vs live rate
+## Decision 6: Duplicates Require Explicit User Action
 
-**Context:** Several expenses are in USD. Priya's requirement: the sheet treated $1 = ₹1, which is wrong.
-
-**Options considered:**
-- Hard-code a fixed exchange rate (e.g. 1 USD = 83 INR)
-- Fetch live rate from an API at import time
-- Let user enter the rate manually
-
-**Chose:** Fetch live rate at import time + let user override
-
-**Why:** A fixed rate becomes wrong the moment exchange rates move. Fetching live ensures the conversion is accurate for when the expense actually occurred. The override option handles cases where the user knows the exact rate used (e.g. the rate their credit card charged). Both the original amount and the converted amount are stored, so the conversion is always auditable.
-
-**Implementation note:** Rate is fetched once per import session and applied to all USD expenses in that session.
+* **Context:** The CSV contains both exact duplicates (Row 5 matches Row 4) and conflicting duplicates (Row 24 conflicts with Row 25).
+* **Options Considered:** Auto-delete exact duplicates and flag conflicting ones, or flag both.
+* **The Choice:** Flag all duplicates for manual confirmation.
+* **Why:** I wanted to stick to Meera's rule: *"I want to approve anything the app deletes or changes."* Silently discarding rows (even identical ones) violates user trust. surrendering control to the user is safer.
+* **Trade-off:** The user has to click "Approve/Reject" for duplicate cards during import review, but the UI includes an "Approve All" utility to resolve duplicates quickly.
 
 ---
 
-## Decision 8 — Percentage normalization: auto vs block
+## Decision 7: Fetching Live Exchange Rates at Ingestion
 
-**Context:** Row 15 has percentages that sum to 110%, not 100%.
-
-**Options considered:**
-- Block the row, require user to fix percentages manually
-- Auto-normalize proportionally and flag the change
-
-**Chose:** Auto-normalize with user notification
-
-**Why:** The note says "percentages might be off" — the user is aware it's approximate. Auto-normalizing (30/110, 30/110, 30/110, 20/110 → each divided by 1.1) preserves the intended ratio while making the math work. The change is shown to the user before confirmation. This is more useful than forcing the user to manually recalculate six decimal places.
+* **Context:** Several expenses are logged in USD (Goa trip).
+* **Options Considered:** Hardcode a static conversion rate (e.g., 1 USD = 83 INR) or fetch live exchange rates.
+* **The Choice:** Fetch live exchange rates during CSV upload and allow manual overrides.
+* **Why:** Fixed rates go out of date immediately. Fetching the current rate from an exchange rate API (`open.er-api.com`) at upload time ensures the conversion is realistic. We also let the user edit the rate on the review screen before finalizing.
+* **Trade-off:** The import process depends on an external API. If the API goes down, we fallback to a hardcoded rate of `83.0` and log a warning.
 
 ---
 
-## Decision 9 — Guest users (Kabir): create account vs ignore share
+## Decision 8: Auto-Normalizing Mismatched Percentages
 
-**Context:** Row 23 includes "Dev's friend Kabir" in the split. Kabir is not a flat member.
-
-**Options considered:**
-- Ignore Kabir's share, split only among flat members
-- Create a guest User record for Kabir
-
-**Chose:** Create guest User (`isGuest = true`)
-
-**Why:** Ignoring Kabir's share means the flat members collectively absorb his cost — inaccurate. Creating a guest account lets the system track that Kabir owes his share without giving him login access. The `isGuest` flag keeps guest accounts clearly separated from real members in the UI.
+* **Context:** Row 15 split percentages sum to 110% instead of 100%.
+* **Options Considered:** Block the row, or auto-normalize the percentages.
+* **The Choice:** Auto-normalize proportionally and show the before/after details to the user.
+* **Why:** The note says "percentages might be off". The user knows the numbers are approximate. Recalculating ratios by hand is annoying. The importer automatically divides each percentage by the total sum (e.g., `30% / 1.1 = 27.27%`), ensuring they equal 100% while preserving the original ratio.
+* **Trade-off:** The final numbers might look slightly different (e.g., 27.27% instead of 30%), but the app shows these changes in the review card so nothing is hidden.
 
 ---
 
-## Decision 10 — Import flow: one-shot vs review-and-confirm
+## Decision 9: Creating Guest User Accounts for External Splitting
 
-**Context:** The importer detects anomalies. The question is whether to apply all changes immediately or show them to the user first.
-
-**Options considered:**
-- Apply all auto-corrections immediately, show a report after
-- Show all anomalies first, require user to approve each one, then import
-
-**Chose:** Review-and-confirm (Meera's requirement)
-
-**Why:** Meera explicitly said "I want to approve anything the app deletes or changes." A one-shot import with a post-hoc report cannot be undone easily if the user disagrees with a decision. The review step adds friction but prevents irreversible mistakes. The ImportSession status machine (PENDING → IN_REVIEW → COMPLETED) supports pausing at the review stage.
+* **Context:** Row 23 splits a Goa expense with "Dev's friend Kabir", who isn't a resident member of the flat.
+* **Options Considered:** Exclude Kabir and split his share among the residents, or track Kabir's share.
+* **The Choice:** Create a guest user account (`isGuest: true`) for Kabir.
+* **Why:** If we split Kabir's share among the residents, the residents end up paying for him, which is inaccurate. Creating a guest profile lets the system record that Kabir owes the flat money, without forcing him to register or set up a password.
+* **Trade-off:** The database contains user records that have no email or password hashes. These profiles are excluded from the main login screen.
 
 ---
 
-## Decision 11 — Split conflict resolution (Row 42): type wins vs details win
+## Decision 10: The Stage-Review-Commit Pipeline
 
-**Context:** Row 42 has `split_type = equal` but `split_details` contains individual share counts.
-
-**Options considered:**
-- Trust split_type, ignore split_details
-- Trust split_details, override split_type
-
-**Chose:** split_details takes priority
-
-**Why:** split_details is more specific than split_type. If someone took the time to write out individual shares, those shares represent their intent more precisely than the type label. The type label is likely a data entry error (forgot to change "equal" to "share"). Flag the conflict and correct the type to SHARE.
+* **Context:** Importing messy CSVs can easily corrupt production tables if errors aren't caught early.
+* **Options Considered:** Parse and write directly to the main tables, or use a staging pipeline.
+* **The Choice:** Implement a **Parse -> Stage & Detect -> Review UI -> Commit** pipeline.
+* **Why:** Staging uploads inside an `ImportSession` and tracking problems in an `ImportAnomaly` table allows the backend to hold the data in suspension. The user reviews everything in a dashboard, makes corrections, and commits only when they are satisfied.
+* **Trade-off:** We store temporary staged rows and anomalies in the database, requiring cleanup logic if an import is abandoned.
 
 ---
 
-## Decision 12 — `amountInINR` column: store vs compute
+## Decision 11: Prioritizing Specific Split Details Over Generic Split Type
 
-**Context:** USD expenses need to show as INR in balances. Two options for where this conversion lives.
-
-**Options considered:**
-- Store only original amount, compute INR on every balance query
-- Store both original and converted amount in the Expense row
-
-**Chose:** Store both in the Expense row (`amount`, `amountInINR`, `exchangeRate`)
-
-**Why:** Computing on every query requires the exchange rate to be stored somewhere anyway. Storing it in the row makes every expense self-contained — you can always see what rate was used, when, and reproduce the exact calculation. Balance queries become simpler (just sum `amountInINR`) with no risk of a rate change retroactively altering historical balances.
+* **Context:** Row 42 is marked as an "equal" split, but contains specific share breakdown details: `Aisha 1; Rohan 1; Priya 1; Sam 1`.
+* **Options Considered:** Trust the split type and ignore the text details, or trust the details.
+* **The Choice:** Trust the details and change the split type to `SHARE`.
+* **Why:** Text details are specific. If someone wrote out individual share numbers, they did it with intent. The "equal" label is likely a copy-paste error from previous rows.
+* **Trade-off:** We override the split type field, but we show the change clearly in the review dashboard.
 
 ---
 
-## Decision 13 — Membership validation on expense creation
+## Decision 12: Storing Converted Currency Values on the Expense Record
 
-**Context:** When creating an expense, should we validate that all
-split participants were active members on the expense date?
-
-**Options considered:**
-- Validate at import time only, trust manual entry
-- Validate on every expense creation regardless of source
-
-**Chose:** Validate on every POST /api/expenses
-
-**Why:** Sam's requirement is that March expenses don't affect him.
-If we only validate at import, a manually entered expense could
-silently include an inactive member. The membership check runs
-against joinedAt / leftAt for every participant on every expense.
-Out-of-bounds participants are rejected with a clear error message.
-
-
-## Decision 14 — Float rounding: remainder to largest share
-
-**Context:** Splitting ₹1199 equally among 4 people = ₹299.75 each.
-Fine. But ₹1440 among 4 = ₹360 each. Some amounts don't divide
-evenly and floating point makes it worse.
-
-**Options considered:**
-- Round everyone to 2 decimal places, ignore the remainder
-- Add the remainder to the first person's share
-- Add the remainder to the largest share
-
-**Chose:** Remainder goes to the largest share
-
-**Why:** Adding to the first person is arbitrary and slightly unfair
-to whoever happens to be listed first. Adding to the largest share
-is still arbitrary but the person already paying the most absorbs
-the smallest relative impact. Verified with test-splits.js that
-split amounts always sum exactly to the expense total.
-
-
-## Decision 15 — Backdating group creator membership
-
-**Context:** The group creator needs a joinedAt date. For historical
-imports (the flat existed since February), the creator's membership
-needs to start in February, not when they registered in the app.
-
-**Options considered:**
-- Always set joinedAt = now() for group creator
-- Accept optional joinedAt in the group creation payload
-
-**Chose:** Accept optional joinedAt, default to now()
-
-**Why:** The entire CSV import covers February onwards. If the group
-creator's membership starts today, every February expense fails
-the membership validation check. The optional backdating solves
-this without any special-casing in the expense logic.
+* **Context:** We need to handle USD expenses when computing INR balances.
+* **Options Considered:** Store only the raw USD amount and convert at query time, or store both.
+* **The Choice:** Store `amount`, `amountInINR`, and `exchangeRate` directly on the `Expense` model.
+* **Why:** If we convert at query time, the system would need to fetch historical exchange rates on the fly, which is slow and fragile. Storing the converted INR value at creation time makes the balance queries fast (just sum `amountInINR`) and ensures that historical reports never change if exchange rates shift.
+* **Trade-off:** Redundant data storage, but the performance and stability gains are huge.
 
 ---
 
-## Decision 16 — Refund handling in balance calculation
+## Decision 13: Enforcing Membership Validation on Expense Creation
 
-**Context:** isRefund expenses need to affect balances opposite to
-normal expenses. A refund reduces what the payer is credited for
-and reduces what participants owe.
+* **Context:** We need to make sure we don't accidentally split expenses with members who weren't active on that date.
+* **Options Considered:** Validate only during CSV import, or validate on all expense operations.
+* **The Choice:** Run membership interval checks on every write operation.
+* **Why:** If we only validate at import time, a manual API request or frontend form submission could still write invalid data. Checking the expense date against user membership intervals on every POST/PUT ensures ledger integrity.
+* **Trade-off:** Every expense creation request requires an extra database lookup to check member histories.
 
-**Options considered:**
-- Filter out refunds entirely and handle as a separate calculation
-- Subtract refund amounts inline using the same paid/owed formula
+---
 
-**Chose:** Subtract inline — same formula, negative contribution
+## Decision 14: Distributing Floating-Point Split Remainders
 
-**Why:** Keeping one formula for all expenses is simpler and less
-error-prone than a separate refund path. isRefund = true flips
-the sign: subtracted from totalPaid for the payer, subtracted
-from totalOwed for participants. Verified manually that this
-produces correct net balances.
+* **Context:** Splitting ₹1199 equally among 4 people results in ₹299.75 each. Splitting ₹1440 among 4 results in ₹360 each. What happens when divisions are uneven?
+* **Options Considered:** Round everyone to 2 decimal places and ignore the remainder, or distribute the remainder.
+* **The Choice:** Round splits to 2 decimal places and add the remainder to the person who has the largest share.
+* **Why:** Financial ledgers must balance exactly to the penny. If we ignore remainders, the sum of splits won't equal the total expense amount. Distributing the remaining paise to the largest share ensures the split balances perfectly, and the relative impact on the person paying the most is negligible.
+* **Trade-off:** One person pays a few paise more, but it is mathematically sound.
 
+---
 
-## Decision 17 — Greedy debt simplification vs exact pairwise
+## Decision 15: Allowing Custom Join Dates for Group Creators
 
-**Context:** Aisha wants "one number per person — who pays whom,
-how much, done." Raw balances show each person's net but don't
-say who specifically pays whom.
+* **Context:** A group creator's membership defaults to the group's creation timestamp.
+* **Options Considered:** Always use creation date, or support custom backdated join times.
+* **The Choice:** Accept a custom `joinedAt` timestamp during group creation.
+* **Why:** Since the flatmates have historical expenses from February but only set up the app in June, the group creator's membership must be backdated to February. Otherwise, February imports fail validation.
+* **Trade-off:** Requires the API to support an optional date parameter during group initialization.
 
-**Options considered:**
-- Show raw net balances only (simpler, but doesn't answer who pays whom)
-- Exact pairwise tracking (track every debt pair, complex)
-- Greedy simplification (minimize number of transactions)
+---
 
-**Chose:** Greedy debt simplification
+## Decision 16: Inline Refund Math in the Balance Engine
 
-**Why:** Minimizes the number of transfers needed to settle all
-debts. Sort debtors and creditors by balance magnitude, match
-largest pairs first, emit a transfer for min(debt, credit),
-repeat. Correct for this group size. At scale (50+ members)
-this can be suboptimal but for 4-5 flatmates it is exact.
+* **Context:** Refund records must adjust balances in the opposite direction of normal expenses.
+* **Options Considered:** Calculate refunds in a separate pass, or handle them inline.
+* **The Choice:** Handle refunds inline by flipping the signs during calculation.
+* **Why:** Keeping a single query path is cleaner. When `isRefund = true`, we subtract the amount from the payer's total paid credit and subtract the split amount from what the participants owe. It uses the same SQL queries and keeps the codebase simple.
+* **Trade-off:** Relies on correct sign mapping, but is easily testable.
 
+---
 
-## Decision 18 — db.js fallback to DIRECT_URL for local dev
+## Decision 17: Greedy Debt Simplification
 
-**Context:** Neon's pooled connection URL has a wake-up timeout
-that caused intermittent failures during local test runs.
+* **Context:** Calculating net balances is easy, but users need to know *who* should pay *whom*.
+* **Options Considered:** Pairwise settlement (everyone settles their raw debts individually) or debt simplification.
+* **The Choice:** Implement a greedy debt simplification algorithm.
+* **Why:** It minimizes the total number of transactions. By matching the person with the largest net debt to the person with the largest net credit and emitting a transfer, we reduce the settlement process to a handful of payments.
+* **Trade-off:** The algorithm runs in $O(N \log N)$ time, which is perfectly fine for flatmate group sizes.
 
-**Options considered:**
-- Always use pooled URL (production-like but unreliable locally)
-- Use DIRECT_URL only in development via NODE_ENV check
+---
 
-**Chose:** Fallback to DIRECT_URL when NODE_ENV !== production
+## Decision 18: Fallback to Direct DB Connection in Development
 
-**Why:** The pooler is needed in production (Neon charges by
-compute, pooling reduces cold starts). Locally, the direct
-connection is faster and 100% reliable. One-line NODE_ENV check
-in db.js, no impact on production behavior.
+* **Context:** Connection pooling issues with Neon's serverless proxy caused intermittent database timeouts in local dev environment.
+* **Options Considered:** Force pooling everywhere, or connect directly in development.
+* **The Choice:** Fallback to the direct PostgreSQL connection string when running in local development.
+* **Why:** Neon's connection pooler is useful in production to manage high compute loads, but it adds network latency and cold-start timeouts to local development. Running queries directly to the database instance locally is faster and more stable.
+* **Trade-off:** We use different connection strings for development and production, but it keeps the development loop fast.
 
+---
 
-## Decision 19 — Pipeline Architecture for Anomaly Review & Finalization
+## Decision 19: Single Transaction Commits for CSV Ingestion
 
-**Context:** Messy CSV inputs contain duplicate, zero-value, ambiguous date, and membership-violating entries that must be resolved by the user before committing.
+* **Context:** Finalizing a CSV import involves writing dozens of expenses, splits, settlements, and guest profiles.
+* **Options Considered:** Write each record individually, or wrap everything in a transaction.
+* **The Choice:** Run all database writes within a single interactive Prisma transaction (`prisma.$transaction`).
+* **Why:** If one write fails halfway through the import (due to a database error or network drop), we would end up with a partially imported dataset, which is a nightmare to clean up. Wrapping everything in a transaction ensures that the import either succeeds completely or rolls back entirely.
+* **Trade-off:** Long-running transactions can block database tables, so we pre-resolve names and run writes sequentially to keep transaction times under the threshold.
 
-**Options considered:**
-- Auto-resolve all anomalies programmatically and import immediately
-- Reject files with anomalies outright, requiring manual pre-editing of the CSV
-- Pipeline: Parse -> Stage & Detect anomalies -> User Review -> Commit Finalized Dataset
+---
 
-**Chose:** Pipeline architecture with review-and-confirm.
+## Decision 20: Reverting Custom DNS Overrides
 
-**Why:** Satisfies Meera's rule ("I want to approve anything the app deletes or changes"). It ensures the CSV is never edited by hand (immutability of source), while giving the user absolute control to skip, convert, or modify entries before they hit database ledger tables.
+* **Context:** A previous code version hardcoded Google Public DNS (`8.8.8.8`) at runtime to resolve Neon connection errors.
+* **Options Considered:** Keep custom DNS resolvers, or use system default DNS.
+* **The Choice:** Revert the custom DNS override and rely on system network defaults.
+* **Why:** Hardcoding external DNS queries blocks connectivity entirely on networks where port 53 (DNS) queries to external IPs are firewalled. Bypassing DNS by connecting to pooler IPs also broke Prisma transactions. Using system defaults is the standard, stable way to handle DNS.
+* **Trade-off:** Local network resolution issues must be handled by the system configuration rather than the application code.
 
+---
 
-## Decision 20 — Custom DNS Override for Serverless Database Connectivity
+## Decision 21: Sequential Database Writes inside Prisma Transactions
 
-**Context:** Local network DNS resolvers occasionally fail to resolve or refuse CNAME queries for serverless cloud databases (like Neon).
+* **Context:** Writing 40+ expenses and splits in parallel inside a transaction caused connection starvation.
+* **Options Considered:** Parallel writes (`Promise.all`) or sequential writes.
+* **The Choice:** Run database writes sequentially inside a loop and set a 90-second timeout.
+* **Why:** Sending dozens of concurrent queries over a single transaction connection exhausts the connection pool, causing transactions to time out. Running them sequentially prevents database pool congestion.
+* **Trade-off:** Importing takes a few seconds longer, but it is 100% stable.
 
-**Options considered:**
-- Hardcode the current resolved IP address (risky, as IPs change dynamically)
-- Force Node.js process to use Google Public DNS servers (`8.8.8.8`) at runtime
-- Rely on system default DNS resolution (without overrides)
+---
 
-**Chose:** Rely on system default DNS resolution (Google DNS override was reverted).
+## Decision 22: Restricting Email Invites to Registered Accounts
 
-**Why:** While the Google DNS override resolved connectivity in some development environments, it broke connectivity completely in networks where port 53 (DNS) queries to external IPs like `8.8.8.8` are blocked/intercepted, causing `ENOTFOUND` errors. Furthermore, using a pooler host as the direct connection string to bypass DNS broke Prisma's interactive transactions (`prisma.$transaction`). Reverting the DNS override and keeping the direct (non-pooler) host for `DIRECT_URL` ensures compatibility across both direct query and transaction pathways.
-
-
-
-## Decision 21 — Sequential Interactive Transaction for Mass CSV Commits
-
-**Context:** Committing 40+ expenses and settlements along with split calculations and guest profiles creates 100+ database writes/reads. Parallel executions inside a single Prisma interactive transaction cause connection pool lockups/starvation.
-
-**Options considered:**
-- Run database writes in parallel inside the transaction (`Promise.all`)
-- Run database writes sequentially inside a single transaction with an increased timeout
-
-**Chose:** Sequential writes + pre-resolved names + 90-second timeout
-
-**Why:** Parallel queries over a single transaction connection overload the transaction proxy, leading to hangs. Sequential processing is the stable, recommended path. By pre-resolving unique names first, we minimize lookup overhead, and the 90-second timeout ensures resilience against cloud database network roundtrip latencies.
-
-
-## Decision 22 — Email Invitation Rule for Group Members
-
-**Context:** Automatically creating Guest profiles when inviting users by email led to situations where users could not register their accounts afterwards due to unique email constraints.
-
-**Options considered:**
-- Keep automatically creating Guest users and allow Guest users to register/upgrade their accounts (requires complex password upgrades and data merging logic).
-- Restrict email invites to registered users only. If the email doesn't exist, block addition and instruct the inviter to share the website link for the user to register first.
-
-**Chose:** Restrict email invites to registered users only.
-
-**Why:** Ensures clear account ownership and registration simplicity. Creating local guests by name only is still supported for local ledger splits, but introducing email-based members requires them to register their account first, resolving email collision bugs cleanly.
-
-
+* **Context:** Automatically creating guest accounts when adding members by email caused database collisions when those users tried to sign up later.
+* **Options Considered:** Write data merging logic to claim guest accounts, or restrict email invites.
+* **The Choice:** Only allow email invites for registered users. If the email doesn't exist, the system tells the inviter to share the registration link.
+* **Why:** Avoids database state merging issues. Guest profiles can still be created locally by name (no email) for splits. Real email-based invitations are kept simple and conflict-free.
+* **Trade-off:** Invited users must register before they can be added to a group via email.
