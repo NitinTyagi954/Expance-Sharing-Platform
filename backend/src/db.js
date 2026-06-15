@@ -2,6 +2,30 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import dotenv from 'dotenv';
+import dns from 'dns';
+
+// Override DNS lookup for neon.tech to bypass local DNS query refusals
+const originalLookup = dns.lookup;
+dns.lookup = function (hostname, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  if (hostname && hostname.includes('neon.tech')) {
+    dns.setServers(['8.8.8.8', '1.1.1.1']);
+    dns.resolve4(hostname, (err, addresses) => {
+      if (err || !addresses.length) {
+        originalLookup(hostname, options, callback);
+      } else if (options && options.all) {
+        callback(null, addresses.map(ip => ({ address: ip, family: 4 })));
+      } else {
+        callback(null, addresses[0], 4);
+      }
+    });
+  } else {
+    originalLookup(hostname, options, callback);
+  }
+};
 
 dotenv.config();
 

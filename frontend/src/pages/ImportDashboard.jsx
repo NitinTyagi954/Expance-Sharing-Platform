@@ -102,43 +102,61 @@ export default function ImportDashboard() {
 
       if (actionDetails.action === 'DISCARD' || actionDetails.action === 'SKIP_ROW') {
         updatedRow.isSkipped = true;
-      } else if (actionDetails.action === 'CONVERT_TO_SETTLEMENT') {
-        updatedRow.isSettlement = true;
-        // Settlements in CSV are paidBy pays splitWith[0]
-        updatedRow.isRefund = false;
-      } else if (actionDetails.action === 'MARK_AS_REFUND') {
-        updatedRow.isRefund = true;
-        updatedRow.amount = Math.abs(updatedRow.amount);
-      } else if (actionDetails.action === 'DEFAULT_TO_INR') {
-        updatedRow.currency = 'INR';
-      } else if (actionDetails.action === 'NORMALIZE_NAME') {
-        updatedRow.paidBy = actionDetails.suggestedName;
-      } else if (actionDetails.action === 'REMOVE_INACTIVE_PARTICIPANT') {
-        // remove participant from splitWith array
-        if (updatedRow.splitWith) {
-          updatedRow.splitWith = updatedRow.splitWith.filter(name => name !== actionDetails.participantName);
+
+        setResolvedRows({
+          ...resolvedRows,
+          [rowNum]: updatedRow
+        });
+
+        // Resolve all anomalies for this row since it's discarded
+        const rowAnoms = anomalies.filter(a => a.rowNumber === rowNum);
+        await Promise.all(
+          rowAnoms.map(a => 
+            api.resolveAnomaly(a.id, 'APPROVED', actionDetails)
+          )
+        );
+
+        const updatedStatuses = { ...anomalyStatuses };
+        rowAnoms.forEach(a => {
+          updatedStatuses[a.id] = 'APPROVED';
+        });
+        setAnomalyStatuses(updatedStatuses);
+      } else {
+        if (actionDetails.action === 'CONVERT_TO_SETTLEMENT') {
+          updatedRow.isSettlement = true;
+          updatedRow.isRefund = false;
+        } else if (actionDetails.action === 'MARK_AS_REFUND') {
+          updatedRow.isRefund = true;
+          updatedRow.amount = Math.abs(updatedRow.amount);
+        } else if (actionDetails.action === 'DEFAULT_TO_INR') {
+          updatedRow.currency = 'INR';
+        } else if (actionDetails.action === 'NORMALIZE_NAME') {
+          updatedRow.paidBy = actionDetails.suggestedName;
+        } else if (actionDetails.action === 'REMOVE_INACTIVE_PARTICIPANT') {
+          if (updatedRow.splitWith) {
+            updatedRow.splitWith = updatedRow.splitWith.filter(name => name !== actionDetails.participantName);
+          }
+        } else if (actionDetails.action === 'USE_SPLIT_DETAILS') {
+          updatedRow.splitType = 'SHARE';
+        } else if (actionDetails.action === 'NORMALIZE_PERCENTAGES') {
+          updatedRow.splitDetails = actionDetails.normalizedDetails;
+        } else if (actionDetails.action === 'CREATE_GUEST') {
+          // system auto creates guest user upon commit
+        } else if (actionDetails.action === 'AUTOCORRECT_AMOUNT') {
+          updatedRow.amount = actionDetails.parsedAmount;
         }
-      } else if (actionDetails.action === 'USE_SPLIT_DETAILS') {
-        updatedRow.splitType = 'SHARE';
-      } else if (actionDetails.action === 'NORMALIZE_PERCENTAGES') {
-        updatedRow.splitDetails = actionDetails.normalizedDetails;
-      } else if (actionDetails.action === 'CREATE_GUEST') {
-        // system auto creates guest user upon commit
-      } else if (actionDetails.action === 'AUTOCORRECT_AMOUNT') {
-        updatedRow.amount = actionDetails.parsedAmount;
+
+        setResolvedRows({
+          ...resolvedRows,
+          [rowNum]: updatedRow
+        });
+
+        await api.resolveAnomaly(anom.id, 'APPROVED', actionDetails);
+        setAnomalyStatuses({
+          ...anomalyStatuses,
+          [anom.id]: 'APPROVED'
+        });
       }
-
-      setResolvedRows({
-        ...resolvedRows,
-        [rowNum]: updatedRow
-      });
-
-      // Submit resolution state to backend
-      await api.resolveAnomaly(anom.id, 'APPROVED', actionDetails);
-      setAnomalyStatuses({
-        ...anomalyStatuses,
-        [anom.id]: 'APPROVED'
-      });
     } catch (err) {
       setError(`Failed to approve resolution: ${err.message}`);
     }
@@ -223,11 +241,19 @@ export default function ImportDashboard() {
         [rowNum]: updatedRow
       });
 
-      await api.resolveAnomaly(anom.id, 'REJECTED', { action: 'DISCARD' });
-      setAnomalyStatuses({
-        ...anomalyStatuses,
-        [anom.id]: 'REJECTED'
+      // Resolve all anomalies for this row as rejected/discarded
+      const rowAnoms = anomalies.filter(a => a.rowNumber === rowNum);
+      await Promise.all(
+        rowAnoms.map(a => 
+          api.resolveAnomaly(a.id, 'REJECTED', { action: 'DISCARD' })
+        )
+      );
+
+      const updatedStatuses = { ...anomalyStatuses };
+      rowAnoms.forEach(a => {
+        updatedStatuses[a.id] = 'REJECTED';
       });
+      setAnomalyStatuses(updatedStatuses);
     } catch (err) {
       setError(`Failed to reject anomaly: ${err.message}`);
     }
@@ -285,7 +311,8 @@ export default function ImportDashboard() {
         [rowNum]: updatedRow
       });
 
-      // Submit resolution status to backend
+      // Submit resolution status to backend for all anomalies of this row
+      const rowAnoms = anomalies.filter(a => a.rowNumber === rowNum);
       const resolvedAction = {
         action: 'MODIFY_ROW',
         fields: { 
@@ -298,11 +325,17 @@ export default function ImportDashboard() {
         }
       };
 
-      await api.resolveAnomaly(anom.id, 'MODIFIED', resolvedAction);
-      setAnomalyStatuses({
-        ...anomalyStatuses,
-        [anom.id]: 'MODIFIED'
+      await Promise.all(
+        rowAnoms.map(a => 
+          api.resolveAnomaly(a.id, 'MODIFIED', resolvedAction)
+        )
+      );
+
+      const updatedStatuses = { ...anomalyStatuses };
+      rowAnoms.forEach(a => {
+        updatedStatuses[a.id] = 'MODIFIED';
       });
+      setAnomalyStatuses(updatedStatuses);
       setEditingRowNumber(null);
       setError(''); // Clear global errors on success
     } catch (err) {
@@ -634,14 +667,17 @@ export default function ImportDashboard() {
             <div>
               <h4 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>Confirm finalized import</h4>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                All anomalies have resolutions logged. Click finalize to commit to the ledger.
+                {manualReviewCount > 0 
+                  ? `⚠️ You have ${manualReviewCount} manually review row(s) remaining. Resolve them to enable import.`
+                  : "All anomalies have resolutions logged. Click finalize to commit to the ledger."
+                }
               </p>
             </div>
             <button 
               onClick={handleFinalize} 
               className="btn btn-primary" 
               style={{ padding: '14px 28px' }}
-              disabled={loading}
+              disabled={loading || manualReviewCount > 0}
             >
               {loading ? <RefreshCw className="spin" size={18} /> : <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Play size={16} /> Finalize CSV Import</span>}
             </button>
