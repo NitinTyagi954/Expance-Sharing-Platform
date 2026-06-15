@@ -236,7 +236,8 @@ export default function ImportDashboard() {
   // Calculate statistics for UI
   const totalRowsCount = rows.length;
   const skippedCount = Object.values(resolvedRows).filter(r => r.isSkipped).length;
-  const cleanCount = totalRowsCount - anomalies.length;
+  const flaggedRowNumbers = new Set(anomalies.map(a => a.rowNumber));
+  const cleanCount = Math.max(0, totalRowsCount - flaggedRowNumbers.size);
   const importedCount = totalRowsCount - skippedCount;
 
   return (
