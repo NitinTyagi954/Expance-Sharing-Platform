@@ -36,7 +36,7 @@ function Navigation() {
     <header className="nav-header">
       <div className="nav-content">
         <Link to="/groups" className="nav-logo">
-          <ShieldAlert size={24} /> Spreetree
+          <ShieldAlert size={24} /> Spreetail
         </Link>
         <nav className="nav-links">
           <Link 
