@@ -64,6 +64,23 @@ h1, h2, h3, h4, h5, h6 {
   transform: translateY(-2px);
 }
 
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.92);
+  z-index: 1000;
+  padding: 24px;
+}
+
+.modal-panel {
+  background: #05070d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+}
+
 /* Premium Buttons */
 .btn {
   display: inline-flex;
@@ -191,6 +208,7 @@ h1, h2, h3, h4, h5, h6 {
   overflow-x: auto;
   border-radius: 12px;
   border: 1px solid var(--border-color);
+  background: #05070d;
 }
 
 .app-table {
@@ -198,10 +216,11 @@ h1, h2, h3, h4, h5, h6 {
   border-collapse: collapse;
   text-align: left;
   font-size: 0.9rem;
+  background: #05070d;
 }
 
 .app-table th {
-  background: rgba(255, 255, 255, 0.02);
+  background: #0a0f1a;
   color: var(--text-secondary);
   font-weight: 600;
   padding: 16px;
@@ -215,6 +234,7 @@ h1, h2, h3, h4, h5, h6 {
   padding: 16px;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
+  background: #05070d;
 }
 
 .app-table tr:last-child td {
@@ -222,7 +242,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .app-table tr:hover td {
-  background: rgba(255, 255, 255, 0.01);
+  background: #0a0f1a;
 }
 
 /* Custom Scrollbar */

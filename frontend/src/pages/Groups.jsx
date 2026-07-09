@@ -153,16 +153,8 @@ export default function Groups() {
 
       {/* Creation Modal */}
       {showModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.7)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div className="glass-card animate-fade-in" style={{ width: '100%', maxWidth: '500px', padding: '32px' }}>
+        <div className="modal-overlay">
+          <div className="glass-card modal-panel animate-fade-in" style={{ width: '100%', maxWidth: '500px', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ fontSize: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <FolderPlus size={24} style={{ color: 'var(--primary)' }} /> Create New Group

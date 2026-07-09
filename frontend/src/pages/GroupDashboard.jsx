@@ -490,12 +490,8 @@ export default function GroupDashboard() {
 
       {/* 1. Add Member Modal */}
       {showMemberModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.7)', display: 'flex',
-          justifyContent: 'center', alignItems: 'center', zIndex: 1000
-        }}>
-          <div className="glass-card" style={{ width: '100%', maxWidth: '450px', padding: '32px' }}>
+        <div className="modal-overlay">
+          <div className="glass-card modal-panel" style={{ width: '100%', maxWidth: '450px', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '8px' }}><UserPlus size={22} style={{ color: 'var(--primary)' }} /> Add Member</h2>
               <button onClick={() => { setError(''); setShowMemberModal(false); }} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
@@ -543,12 +539,8 @@ export default function GroupDashboard() {
 
       {/* 2. Remove Member Modal */}
       {showRemoveModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.7)', display: 'flex',
-          justifyContent: 'center', alignItems: 'center', zIndex: 1000
-        }}>
-          <div className="glass-card" style={{ width: '100%', maxWidth: '450px', padding: '32px' }}>
+        <div className="modal-overlay">
+          <div className="glass-card modal-panel" style={{ width: '100%', maxWidth: '450px', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '8px' }}><UserMinus size={22} style={{ color: 'var(--accent-red)' }} /> Remove Member</h2>
               <button onClick={() => setShowRemoveModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
@@ -586,12 +578,8 @@ export default function GroupDashboard() {
 
       {/* Edit Member Dates Modal */}
       {showEditModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.7)', display: 'flex',
-          justifyContent: 'center', alignItems: 'center', zIndex: 1000
-        }}>
-          <div className="glass-card animate-fade-in" style={{ width: '100%', maxWidth: '450px', padding: '32px' }}>
+        <div className="modal-overlay">
+          <div className="glass-card modal-panel animate-fade-in" style={{ width: '100%', maxWidth: '450px', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
               <h2 style={{ fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '8px' }}><Users size={22} style={{ color: 'var(--primary)' }} /> Edit Membership Dates</h2>
               <button onClick={() => setShowEditModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
@@ -637,12 +625,8 @@ export default function GroupDashboard() {
 
       {/* 3. Record Expense Modal */}
       {showExpenseModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.7)', display: 'flex',
-          justifyContent: 'center', alignItems: 'center', zIndex: 1000
-        }}>
-          <div className="glass-card animate-fade-in" style={{ width: '100%', maxWidth: '500px', padding: '32px' }}>
+        <div className="modal-overlay">
+          <div className="glass-card modal-panel animate-fade-in" style={{ width: '100%', maxWidth: '500px', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '1.3rem', display: 'flex', alignItems: 'center', gap: '8px' }}><Plus size={20} style={{ color: 'var(--primary)' }} /> Record Expense</h2>
               <button onClick={() => setShowExpenseModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
@@ -719,12 +703,8 @@ export default function GroupDashboard() {
 
       {/* 4. Record Settlement Modal */}
       {showSettlementModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0, 0, 0, 0.7)', display: 'flex',
-          justifyContent: 'center', alignItems: 'center', zIndex: 1000
-        }}>
-          <div className="glass-card animate-fade-in" style={{ width: '100%', maxWidth: '450px', padding: '32px' }}>
+        <div className="modal-overlay">
+          <div className="glass-card modal-panel animate-fade-in" style={{ width: '100%', maxWidth: '450px', padding: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '1.3rem', display: 'flex', alignItems: 'center', gap: '8px' }}><ArrowRightLeft size={20} style={{ color: 'var(--primary)' }} /> Log Settlement</h2>
               <button onClick={() => setShowSettlementModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
