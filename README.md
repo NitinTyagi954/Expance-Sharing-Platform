@@ -240,8 +240,8 @@ cd ../frontend && npm install
 
 Create `backend/.env`:
 ```env
-DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/neondb?sslmode=require"
-DIRECT_URL="postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require"
+DATABASE_URL=""
+DIRECT_URL=""
 JWT_SECRET="your-secret-key-here"
 ```
 
